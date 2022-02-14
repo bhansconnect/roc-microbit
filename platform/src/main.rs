@@ -10,7 +10,7 @@ use panic_rtt_target as _;
 use rtt_target::{rprintln, rtt_init_print};
 // use panic_halt as _;
 
-#[link(name = "rocapp")]
+#[link(name = "app")]
 extern "C" {
     fn roc__mainForHost_1_exposed_generic(val: u8, x: &u64);
 }
