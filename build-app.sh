@@ -11,6 +11,7 @@ fi
 
 # Convert it to a static library.
 echo "Generating static library"
+rm ./platform/libapp.a
 arm-none-eabi-ar rcs "./platform/libapp.a" "./apps/$app.o"
 
 # Build platform.

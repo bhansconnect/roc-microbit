@@ -12,11 +12,43 @@ mod memory;
 
 #[repr(C)]
 #[derive(Debug, Default)]
+struct Row {
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
+struct DisplayData {
+    a: Row,
+    b: Row,
+    c: Row,
+    d: Row,
+    e: Row,
+}
+
+impl DisplayData {
+    fn to_bytes(&self) -> [[u8; 5]; 5] {
+        [
+            [self.a.a, self.a.b, self.a.c, self.a.d, self.a.e],
+            [self.b.a, self.b.b, self.b.c, self.b.d, self.b.e],
+            [self.c.a, self.c.b, self.c.c, self.c.d, self.c.e],
+            [self.d.a, self.d.b, self.d.c, self.d.d, self.d.e],
+            [self.e.a, self.e.b, self.e.c, self.e.d, self.e.e],
+        ]
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
 struct Output {
     // TODO: move this out of here and make it a proper boxed model.
     // Currently for simplicity, the state is just a u64.
     next: u64,
-    display: [[u8; 5]; 5],
+    display: DisplayData,
 }
 
 fn roc_main(i: u64) -> Output {
@@ -43,7 +75,7 @@ fn main() -> ! {
         rprintln!("Sending state: {:?}", i);
         let output = roc_main(i);
         rprintln!("Roc generated: {:?}", output);
-        display.show(&mut timer, output.display, 1000);
+        display.show(&mut timer, output.display.to_bytes(), 10);
         i = output.next;
     }
 }
