@@ -1,9 +1,9 @@
-platform "examples/add"
-    requires {} { main : U8 -> U64 }
+platform "microbit"
+    requires {} { main : U8 -> IO.Output }
     exposes []
     packages {}
-    imports []
+    imports [ IO ]
     provides [ mainForHost ]
 
-mainForHost : U8 -> U64
+mainForHost : U8 -> IO.Output
 mainForHost = \a -> main a

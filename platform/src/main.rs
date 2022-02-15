@@ -2,39 +2,30 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use embedded_hal::blocking::delay::DelayMs;
-use microbit::{board::Board, hal::Timer};
+// use embedded_hal::blocking::delay::DelayMs;
+use microbit::{board::Board, display::blocking::Display, hal::Timer};
 use panic_rtt_target as _;
 use rtt_target::{rprintln, rtt_init_print};
 // use panic_halt as _;
 
 mod memory;
 
-pub fn roc_fib(n: u8) -> u64 {
+#[repr(C)]
+#[derive(Debug, Default)]
+struct Output {
+    data: u64,
+    display: [[u8; 5]; 5],
+}
+
+fn roc_main(i: u8) -> Output {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed_generic"]
-        fn call(n: u8, out: &mut u64);
+        fn call(i: u8, out: &mut Output);
     }
-    let mut out = 0;
-    unsafe { call(n, &mut out) };
+    let mut out: Output = Default::default();
+    unsafe { call(i, &mut out) };
     out
-}
-
-#[inline(never)]
-fn fib_lin(n: u8, x: &mut u64) {
-    let mut a = 0;
-    *x = 1;
-    let mut c;
-    if n == 0 {
-        *x = a;
-        return;
-    }
-    for _ in 2..=n {
-        c = a + *x;
-        a = *x;
-        *x = c;
-    }
 }
 
 #[entry]
@@ -43,23 +34,18 @@ fn main() -> ! {
 
     let board = Board::take().unwrap();
     let mut timer = Timer::new(board.TIMER0);
-    // for i in 0..=92 {
-    timer.delay_ms(1000_u32);
-    let i = 93;
-    const N: usize = 10000;
-    rprintln!("Calculating fib({}) {} times in roc", i, N);
-    let mut x = 0;
-    for _ in 0..N {
-        x = roc_fib(i);
-    }
-    rprintln!("Result: {}", x);
+    let mut display = Display::new(board.display_pins);
 
-    rprintln!("Calculating fib({}) {} times in rust linear", i, N);
-    for _ in 0..N {
-        fib_lin(i, &mut x);
+    let mut i = 0;
+    loop {
+        rprintln!("Sending state: {:?}", i);
+        let output = roc_main(i);
+        rprintln!("Roc generated: {:?}", output);
+        display.show(&mut timer, output.display, 1000);
+        i += 1;
+        if output.display[0][0] == 1 {
+            // display is gonna overflow, reset.
+            i = 0;
+        }
     }
-    rprintln!("Result: {}", x);
-    // }
-    #[allow(clippy::empty_loop)]
-    loop {}
 }
