@@ -1,0 +1,31 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: rust-fmt
+        language: system
+        files: '\.rs$'
+        entry: cd platform && cargo fmt -- --check
+
+      # TODO: enable this once it can just check formatting without overwriting.
+      # - id: roc-fmt
+      #   name: rust-fmt
+      #   language: system
+      #   files: '\.rs$'
+      #   entry: ./roc/target/release/roc format apps/*.roc
+
+      - id: rust-clippy
+        name: rust-clippy
+        language: system
+        files: '\.rs$'
+        entry: cd platform && cargo clippy -- -Dwarnings
+        pass_filenames: false
