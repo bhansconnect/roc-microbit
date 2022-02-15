@@ -3,14 +3,14 @@ use rtt_target::{rprint, rprintln};
 
 // TODO: Maybe add stack based alloc as a feature.
 #[no_mangle]
-pub unsafe extern "C" fn roc_alloc(size: usize, _alignment: u32) -> *mut c_void {
+pub unsafe extern "C" fn roc_alloc(_size: usize, _alignment: u32) -> *mut c_void {
     panic!("allocations are not allowed for this platform")
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn roc_realloc(
-    c_ptr: *mut c_void,
-    new_size: usize,
+    _c_ptr: *mut c_void,
+    _new_size: usize,
     _old_size: usize,
     _alignment: u32,
 ) -> *mut c_void {
@@ -18,7 +18,7 @@ pub unsafe extern "C" fn roc_realloc(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_dealloc(c_ptr: *mut c_void, _alignment: u32) {
+pub unsafe extern "C" fn roc_dealloc(_c_ptr: *mut c_void, _alignment: u32) {
     panic!("allocations are not allowed for this platform")
 }
 
@@ -43,11 +43,15 @@ pub unsafe extern "C" fn roc_panic(c_ptr: *mut c_void, tag_id: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_memcpy(dst: *mut c_void, src: *mut c_void, n: usize) -> *mut c_void {
+pub unsafe extern "C" fn roc_memcpy(
+    _dst: *mut c_void,
+    _src: *mut c_void,
+    _n: usize,
+) -> *mut c_void {
     todo!()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn roc_memset(dst: *mut c_void, c: i32, n: usize) -> *mut c_void {
+pub unsafe extern "C" fn roc_memset(_dst: *mut c_void, _c: i32, _n: usize) -> *mut c_void {
     todo!()
 }

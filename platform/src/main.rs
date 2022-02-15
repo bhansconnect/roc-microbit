@@ -1,16 +1,14 @@
-// #![deny(unsafe_code)]
 #![no_main]
 #![no_std]
 
-use core::ffi::c_void;
 use cortex_m_rt::entry;
 use embedded_hal::blocking::delay::DelayMs;
 use microbit::{board::Board, hal::Timer};
 use panic_rtt_target as _;
 use rtt_target::{rprintln, rtt_init_print};
+// use panic_halt as _;
 
 mod memory;
-// use panic_halt as _;
 
 pub fn roc_fib(n: u8) -> u64 {
     #[link(name = "app")]
@@ -52,7 +50,7 @@ fn main() -> ! {
     rprintln!("Calculating fib({}) {} times in roc", i, N);
     let mut x = 0;
     for _ in 0..N {
-        unsafe { x = roc_fib(i) };
+        x = roc_fib(i);
     }
     rprintln!("Result: {}", x);
 
@@ -62,5 +60,6 @@ fn main() -> ! {
     }
     rprintln!("Result: {}", x);
     // }
+    #[allow(clippy::empty_loop)]
     loop {}
 }
