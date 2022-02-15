@@ -5,4 +5,4 @@ set -e
 ./build-app.sh $1
 
 # Deploy platform.
-(cd platform && cargo embed --release)
+(cd platform && cargo size --release -- -A)

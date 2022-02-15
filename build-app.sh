@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 # Build app to object file.
 app="$1"
@@ -11,7 +12,7 @@ fi
 
 # Convert it to a static library.
 echo "Generating static library"
-rm ./platform/libapp.a
+rm -f ./platform/libapp.a
 arm-none-eabi-ar rcs "./platform/libapp.a" "./apps/$app.o"
 
 # Build platform.
