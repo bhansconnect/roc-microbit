@@ -13,15 +13,17 @@ mod memory;
 #[repr(C)]
 #[derive(Debug, Default)]
 struct Output {
-    data: u64,
+    // TODO: move this out of here and make it a proper boxed model.
+    // Currently for simplicity, the state is just a u64.
+    next: u64,
     display: [[u8; 5]; 5],
 }
 
-fn roc_main(i: u8) -> Output {
+fn roc_main(i: u64) -> Output {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed_generic"]
-        fn call(i: u8, out: &mut Output);
+        fn call(i: u64, out: &mut Output);
     }
     let mut out: Output = Default::default();
     unsafe { call(i, &mut out) };
@@ -42,10 +44,6 @@ fn main() -> ! {
         let output = roc_main(i);
         rprintln!("Roc generated: {:?}", output);
         display.show(&mut timer, output.display, 1000);
-        i += 1;
-        if output.display[0][0] == 1 {
-            // display is gonna overflow, reset.
-            i = 0;
-        }
+        i = output.next;
     }
 }

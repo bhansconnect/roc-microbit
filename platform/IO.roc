@@ -11,7 +11,7 @@ Display : [
     ]
 
 Output : {
-        data: U64,
+        next: U64,
         display : Display,
     }
 
