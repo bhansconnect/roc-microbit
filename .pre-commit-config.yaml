@@ -16,12 +16,12 @@ repos:
         files: '\.rs$'
         entry: cd platform && cargo fmt -- --check
 
-      # TODO: enable this once it can just check formatting without overwriting.
+      # TODO: enable this once it can just check formatting without overwriting and directories are supported.
       # - id: roc-fmt
-      #   name: rust-fmt
+      #   name: roc-fmt
       #   language: system
-      #   files: '\.rs$'
-      #   entry: ./roc/target/release/roc format apps/*.roc
+      #   files: '\.roc$'
+      #   entry: ./roc/target/release/roc format apps
 
       - id: rust-clippy
         name: rust-clippy
