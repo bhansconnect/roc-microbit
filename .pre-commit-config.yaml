@@ -16,12 +16,12 @@ repos:
         files: '\.rs$'
         entry: cd platform && cargo fmt -- --check
 
-      # TODO: change this to directory version once ready.
-      - id: roc-fmt
-        name: roc-fmt
-        language: system
-        files: '\.roc$'
-        entry: ./roc/target/release/roc format --check apps/fib.roc apps/prime.roc platform/IO.roc platform/Package-Config.roc
+      # TODO: Enable this once some bugs are fixed around use.
+      # - id: roc-fmt
+      #   name: roc-fmt
+      #   language: system
+      #   files: '\.roc$'
+      #   entry: ./roc/target/release/roc format --check apps/fib.roc apps/prime.roc platform/IO.roc platform/Package-Config.roc
 
       - id: rust-clippy
         name: rust-clippy
