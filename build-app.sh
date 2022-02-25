@@ -5,7 +5,7 @@ set -e
 app="$1"
 app_roc="./apps/$app.roc"
 if [ -f "$app_roc" ]; then
-	./roc/target/release/roc build --optimize --no-link --precompiled-host --backend thumbv7emhf $app_roc
+	./roc/target/release/roc build --opt-size --no-link --precompiled-host --backend thumbv7emhf $app_roc
 else
 	echo "$app is not an app!"
 fi
