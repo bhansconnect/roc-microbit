@@ -22,15 +22,17 @@ pub unsafe extern "C" fn roc_dealloc(_c_ptr: *mut c_void, _alignment: u32) {
 }
 
 struct RocPanic {
-    c_str: *const u8,
+    c_ptr: *const u8,
 }
 
 impl defmt::Format for RocPanic {
     fn format(&self, f: defmt::Formatter) {
-        let tmp = self.c_str;
-        while *tmp != 0 {
-            defmt::write!(f, "{}", *tmp as char);
-            tmp = tmp.add(1);
+        let mut tmp = self.c_ptr;
+        unsafe {
+            while *tmp != 0 {
+                defmt::write!(f, "{}", *tmp as char);
+                tmp = tmp.add(1);
+            }
         }
     }
 }
@@ -39,8 +41,12 @@ impl defmt::Format for RocPanic {
 pub unsafe extern "C" fn roc_panic(c_ptr: *mut c_void, tag_id: u32) {
     match tag_id {
         0 => {
-            let mut c_str = c_ptr as *const u8;
-            defmt::panic!("Roc hit a panic: {}", RocPanic { c_str });
+            defmt::panic!(
+                "Roc hit a panic: {}",
+                RocPanic {
+                    c_ptr: c_ptr as *const u8
+                }
+            );
         }
         _ => defmt::panic!("Roc panicked: 0x{:x} {}", c_ptr as usize, tag_id),
     }

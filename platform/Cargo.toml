@@ -3,6 +3,10 @@ name = "roc-microbit"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["nightly"]
+nightly = ["embassy-nrf/nightly"]
+
 [dependencies]
 embassy = { version = "0.1.0", path = "../embassy/embassy", features = ["defmt"] }
 embassy-nrf = { version = "0.1.0", path = "../embassy/embassy-nrf", features = ["defmt", "nrf52833", "time-driver-rtc1", "gpiote"] }
