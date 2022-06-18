@@ -181,7 +181,7 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     loop {
         defmt::debug!("Input: {:?}", input);
         let output = roc_main(input.clone());
-        defmt::info!("Output: {}", output);
+        defmt::debug!("Output: {:?}", output);
         write_motor_speed(&mut i2c, Motor::Left, output.speed_left)
             .await
             .unwrap();

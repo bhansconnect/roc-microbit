@@ -3,8 +3,9 @@ app "fib"
     imports [ pf.IO ]
     provides [ main ] to pf
 
-main : U64 -> IO.Output
-main = \n ->
+main : IO.Input -> IO.Output
+main = \{state} ->
+    n = state
     data = fib n 0 1
     # Once the screen is full reset to 0.
     next = if Num.isEven (Num.shiftRightBy 24 data) then
@@ -12,8 +13,10 @@ main = \n ->
         else
             0
     {
-        next: next,
-        display: IO.displayNum data
+        state: next,
+        display: IO.displayNum data,
+        speedLeft: 0,
+        speedRight: 0,
     }
 
 # the clever implementation requires join points

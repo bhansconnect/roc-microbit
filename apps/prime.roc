@@ -14,7 +14,9 @@ main = \{state} ->
             0
     {
         state: next,
-        display: IO.displayNum data
+        display: IO.displayNum data,
+        speedLeft: 0,
+        speedRight: 0,
     }
 
 # This returns the highest prime number less than n.
