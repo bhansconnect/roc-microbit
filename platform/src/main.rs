@@ -80,6 +80,7 @@ impl<'d> Display<'d> {
         }
     }
 
+    // TODO: Maybe claim a timer and make this non-blocking.
     async fn show(&mut self, data: &DisplayData, duration_ms: u64) {
         let loops = duration_ms / (5 * DEFAULT_DELAY_MS);
         let matrix = data.to_bytes();
