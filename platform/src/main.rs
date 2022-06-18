@@ -13,7 +13,7 @@ mod fmt;
 mod memory;
 
 #[repr(C)]
-#[derive(Debug, Format, Default)]
+#[derive(Default)]
 struct Row {
     a: u8,
     b: u8,
@@ -23,7 +23,7 @@ struct Row {
 }
 
 #[repr(C)]
-#[derive(Debug, Format, Default)]
+#[derive(Default)]
 struct DisplayData {
     a: Row,
     b: Row,
@@ -41,6 +41,12 @@ impl DisplayData {
             [self.d.a, self.d.b, self.d.c, self.d.d, self.d.e],
             [self.e.a, self.e.b, self.e.c, self.e.d, self.e.e],
         ]
+    }
+}
+
+impl defmt::Format for DisplayData {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{:?}", self.to_bytes())
     }
 }
 
@@ -108,7 +114,7 @@ impl<'d> Display<'d> {
 }
 
 #[repr(u8)]
-#[derive(Debug, Format, Default, Clone)]
+#[derive(Format, Default, Clone)]
 enum LightLevel {
     #[default]
     Dark = 0,
@@ -116,7 +122,7 @@ enum LightLevel {
 }
 
 #[repr(C)]
-#[derive(Debug, Format, Default, Clone)]
+#[derive(Format, Default, Clone)]
 struct RocInput {
     state: u64,
     light_left: LightLevel,
@@ -124,7 +130,7 @@ struct RocInput {
 }
 
 #[repr(C)]
-#[derive(Debug, Format, Default)]
+#[derive(Format, Default)]
 struct RocOutput {
     state: u64,
     display: DisplayData,
@@ -144,7 +150,7 @@ fn roc_main(input: RocInput) -> RocOutput {
 }
 
 #[repr(u8)]
-#[derive(Debug, Format, Clone)]
+#[derive(Format, Clone)]
 enum Motor {
     Left = 0x01,
     Right = 0x02,
@@ -179,9 +185,9 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let mut input: RocInput = Default::default();
     defmt::info!("Starting");
     loop {
-        defmt::debug!("Input: {:?}", input);
+        defmt::debug!("Input: {}", input);
         let output = roc_main(input.clone());
-        defmt::debug!("Output: {:?}", output);
+        defmt::debug!("Output: {}", output);
         write_motor_speed(&mut i2c, Motor::Left, output.speed_left)
             .await
             .unwrap();
