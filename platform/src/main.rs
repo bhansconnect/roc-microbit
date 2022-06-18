@@ -5,7 +5,7 @@
 use embassy::executor::Spawner;
 use embassy::time::{Duration, Timer};
 use embassy_nrf::gpio::{AnyPin, Level, Output, OutputDrive, Pin};
-use embassy_nrf::{peripherals, Peripherals};
+use embassy_nrf::{interrupt, peripherals, twim, Peripherals};
 
 mod fmt;
 
@@ -42,6 +42,8 @@ impl DisplayData {
         ]
     }
 }
+
+const CUTEBOT_ADDR: u8 = 0x10;
 
 const DEFAULT_DELAY_MS: u64 = 2;
 struct Display<'d> {
@@ -126,6 +128,11 @@ fn roc_main(i: u64) -> RocState {
 
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
+    let config = twim::Config::default();
+    let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+    let mut i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
+    i2c.write(CUTEBOT_ADDR, &[0x01, 0x02, 30, 0]).await.unwrap();
+
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
     );
