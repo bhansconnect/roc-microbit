@@ -161,6 +161,9 @@ async fn write_motor_speed<T: twim::Instance>(
     motor: Motor,
     speed: i8,
 ) -> Result<(), twim::Error> {
+    if speed < -100 || speed > 100 {
+        defmt::warn!("motor speed should be in the range -100 to 100");
+    }
     let dir = if speed > 0 { 0x02 } else { 0x01 };
     let speed = if speed >= 0 {
         speed as u8
@@ -183,7 +186,7 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let light_left = Input::new(p.P0_17, Pull::Up);
     let light_right = Input::new(p.P0_01, Pull::Up);
     let mut input: RocInput = Default::default();
-    defmt::info!("Starting");
+    defmt::info!("Starting Main Loop");
     loop {
         defmt::debug!("Input: {}", input);
         let output = roc_main(input.clone());
