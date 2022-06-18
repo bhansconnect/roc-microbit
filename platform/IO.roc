@@ -11,8 +11,8 @@ Display : [
     ]
 
 LightLevel : [
-        Dark,
         Bright,
+        Dark,
     ]
 
 State : U64

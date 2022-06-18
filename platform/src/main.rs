@@ -117,8 +117,8 @@ impl<'d> Display<'d> {
 #[derive(Format, Default, Clone)]
 enum LightLevel {
     #[default]
-    Dark = 0,
-    Bright = 1,
+    Bright = 0,
+    Dark = 1,
 }
 
 #[repr(C)]
@@ -143,10 +143,10 @@ fn roc_main(input: RocInput) -> RocOutput {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed_generic"]
-        fn call(input: RocInput, out: &mut RocOutput);
+        fn call(state: u64, light_left: LightLevel, light_right: LightLevel, out: &mut RocOutput);
     }
     let mut out: RocOutput = Default::default();
-    unsafe { call(input, &mut out) };
+    unsafe { call(input.state, input.light_left, input.light_right, &mut out) };
     out
 }
 
@@ -201,15 +201,15 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         disp.show(&output.display, output.delay_ms).await;
 
         input.state = output.state;
-        input.light_left = if light_left.is_low() {
-            LightLevel::Dark
-        } else {
+        input.light_left = if light_left.is_high() {
             LightLevel::Bright
+        } else {
+            LightLevel::Dark
         };
-        input.light_right = if light_right.is_low() {
-            LightLevel::Dark
-        } else {
+        input.light_right = if light_right.is_high() {
             LightLevel::Bright
+        } else {
+            LightLevel::Dark
         };
     }
 }
