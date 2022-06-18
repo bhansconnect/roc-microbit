@@ -2,9 +2,10 @@
 #![no_std]
 #![feature(type_alias_impl_trait)]
 
+use defmt::Format;
 use embassy::executor::Spawner;
 use embassy::time::{Duration, Timer};
-use embassy_nrf::gpio::{AnyPin, Level, Output, OutputDrive, Pin};
+use embassy_nrf::gpio::{AnyPin, Input, Level, Output, OutputDrive, Pin, Pull};
 use embassy_nrf::{interrupt, peripherals, twim, Peripherals};
 
 mod fmt;
@@ -12,7 +13,7 @@ mod fmt;
 mod memory;
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug, Format, Default)]
 struct Row {
     a: u8,
     b: u8,
@@ -22,7 +23,7 @@ struct Row {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug, Format, Default)]
 struct DisplayData {
     a: Row,
     b: Row,
@@ -107,22 +108,36 @@ impl<'d> Display<'d> {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
-struct RocState {
-    // TODO: move this out of here and make it a proper boxed model.
-    // Currently for simplicity, the state is just a u64.
-    next: u64,
+#[derive(Debug, Format, Default, Clone)]
+enum LightLevel {
+    #[default]
+    Dark,
+    Bright,
+}
+
+#[repr(C)]
+#[derive(Debug, Format, Default, Clone)]
+struct RocInput {
+    state: u64,
+    light_left: LightLevel,
+    light_right: LightLevel,
+}
+
+#[repr(C)]
+#[derive(Debug, Format, Default)]
+struct RocOutput {
+    state: u64,
     display: DisplayData,
 }
 
-fn roc_main(i: u64) -> RocState {
+fn roc_main(input: RocInput) -> RocOutput {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed_generic"]
-        fn call(i: u64, out: &mut RocState);
+        fn call(input: RocInput, out: &mut RocOutput);
     }
-    let mut out: RocState = Default::default();
-    unsafe { call(i, &mut out) };
+    let mut out: RocOutput = Default::default();
+    unsafe { call(input, &mut out) };
     out
 }
 
@@ -136,11 +151,27 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
     );
-    let mut state: RocState = Default::default();
+
+    let light_left = Input::new(p.P0_17, Pull::Up);
+    let light_right = Input::new(p.P0_01, Pull::Up);
+    let mut input: RocInput = Default::default();
+    defmt::info!("Starting");
     loop {
-        state = roc_main(state.next);
-        defmt::info!("Next State: {}", state.next);
-        defmt::debug!("{:?}", state.display.to_bytes());
-        disp.show(&state.display, 1000).await;
+        defmt::debug!("Input: {:?}", input);
+        let output = roc_main(input.clone());
+        defmt::info!("Next state: {}", output.state);
+        defmt::debug!("{:?}", output.display.to_bytes());
+        disp.show(&output.display, 1000).await;
+        input.state = output.state;
+        input.light_left = if light_left.is_high() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        };
+        input.light_right = if light_right.is_high() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        };
     }
 }

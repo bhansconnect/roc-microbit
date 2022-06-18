@@ -3,8 +3,9 @@ app "prime"
     imports [ pf.IO ]
     provides [ main ] to pf
 
-main : U64 -> IO.Output
-main = \n ->
+main : IO.Input -> IO.Output
+main = \{state} ->
+    n = state
     data = prevPrime n
     # # Once the screen is full reset to 0.
     next = if Num.isEven (Num.shiftRightBy 24 data) then
@@ -12,7 +13,7 @@ main = \n ->
         else
             0
     {
-        next: next,
+        state: next,
         display: IO.displayNum data
     }
 

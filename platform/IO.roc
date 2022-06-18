@@ -1,5 +1,5 @@
 interface IO
-    exposes [ Output, Display, Row, displayNum ]
+    exposes [ Input, Output, Display, Row, displayNum ]
     imports []
 
 Row : [
@@ -10,8 +10,21 @@ Display : [
         Display Row Row Row Row Row,
     ]
 
+LightLevel : [
+        Dark,
+        Bright,
+    ]
+
+State : U64
+
+Input : {
+        state: State,
+        lightLeft : LightLevel,
+        lightRight : LightLevel,
+    }
+
 Output : {
-        next: U64,
+        state: State,
         display : Display,
     }
 
