@@ -132,6 +132,7 @@ struct RocInput {
 #[repr(C)]
 #[derive(Format, Default)]
 struct RocOutput {
+    delay_ms: u64,
     state: u64,
     display: DisplayData,
     speed_left: i8,
@@ -197,7 +198,7 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         write_motor_speed(&mut i2c, Motor::Right, output.speed_right)
             .await
             .unwrap();
-        disp.show(&output.display, 1000).await;
+        disp.show(&output.display, output.delay_ms).await;
 
         input.state = output.state;
         input.light_left = if light_left.is_low() {

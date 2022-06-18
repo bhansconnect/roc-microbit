@@ -24,6 +24,7 @@ Input : {
     }
 
 Output : {
+        delayMS: U64,
         state: State,
         display : Display,
         speedLeft: I8,

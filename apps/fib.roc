@@ -13,6 +13,7 @@ main = \{state} ->
         else
             0
     {
+        delayMS: 200,
         state: next,
         display: IO.displayNum data,
         speedLeft: 0,
