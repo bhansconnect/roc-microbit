@@ -26,6 +26,8 @@ Input : {
 Output : {
         state: State,
         display : Display,
+        speedLeft: I8,
+        speedRight: I8,
     }
 
 displayNum : U64 -> Display

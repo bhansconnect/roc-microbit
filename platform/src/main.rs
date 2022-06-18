@@ -107,12 +107,12 @@ impl<'d> Display<'d> {
     }
 }
 
-#[repr(C)]
+#[repr(u8)]
 #[derive(Debug, Format, Default, Clone)]
 enum LightLevel {
     #[default]
-    Dark,
-    Bright,
+    Dark = 0,
+    Bright = 1,
 }
 
 #[repr(C)]
@@ -128,6 +128,8 @@ struct RocInput {
 struct RocOutput {
     state: u64,
     display: DisplayData,
+    speed_left: i8,
+    speed_right: i8,
 }
 
 fn roc_main(input: RocInput) -> RocOutput {
@@ -141,12 +143,32 @@ fn roc_main(input: RocInput) -> RocOutput {
     out
 }
 
+#[repr(u8)]
+#[derive(Debug, Format, Clone)]
+enum Motor {
+    Left = 0x01,
+    Right = 0x02,
+}
+
+async fn write_motor_speed<T: twim::Instance>(
+    i2c: &mut twim::Twim<'_, T>,
+    motor: Motor,
+    speed: i8,
+) -> Result<(), twim::Error> {
+    let dir = if speed > 0 { 0x02 } else { 0x01 };
+    let speed = if speed >= 0 {
+        speed as u8
+    } else {
+        (-1 * speed) as u8
+    };
+    i2c.write(CUTEBOT_ADDR, &[motor as u8, dir, speed, 0]).await
+}
+
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
     let config = twim::Config::default();
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
     let mut i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
-    i2c.write(CUTEBOT_ADDR, &[0x01, 0x02, 30, 0]).await.unwrap();
 
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
@@ -159,19 +181,25 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     loop {
         defmt::debug!("Input: {:?}", input);
         let output = roc_main(input.clone());
-        defmt::info!("Next state: {}", output.state);
-        defmt::debug!("{:?}", output.display.to_bytes());
+        defmt::info!("Output: {}", output);
+        write_motor_speed(&mut i2c, Motor::Left, output.speed_left)
+            .await
+            .unwrap();
+        write_motor_speed(&mut i2c, Motor::Right, output.speed_right)
+            .await
+            .unwrap();
         disp.show(&output.display, 1000).await;
+
         input.state = output.state;
-        input.light_left = if light_left.is_high() {
-            LightLevel::Bright
-        } else {
+        input.light_left = if light_left.is_low() {
             LightLevel::Dark
+        } else {
+            LightLevel::Bright
         };
-        input.light_right = if light_right.is_high() {
-            LightLevel::Bright
-        } else {
+        input.light_right = if light_right.is_low() {
             LightLevel::Dark
+        } else {
+            LightLevel::Bright
         };
     }
 }
