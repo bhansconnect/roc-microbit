@@ -9,19 +9,17 @@ main = \{state, lightLeft, lightRight} ->
     T speedLeft speedRight next =
         when T lightLeft lightRight is
             T Dark Dark ->
-                T -speed -speed 0
+                T speed speed 0
             T Bright Dark ->
-                T 0 -speed 1
+                T speed 0 1
             T Dark Bright ->
-                T -speed 0 2
+                T 0 speed 2
             T Bright Bright ->
                 when state is
-                    0 ->
-                        T -speed -speed 0
-                    1 ->
-                        T 0 -speed 1
+                    0 | 1 ->
+                        T speed 0 1
                     2 ->
-                        T -speed 0 2
+                        T 0 speed 2
                     _ ->
                         T 0 0 3
     ll =
