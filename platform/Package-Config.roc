@@ -5,5 +5,5 @@ platform "microbit"
     imports [ IO ]
     provides [ mainForHost ]
 
-mainForHost : U64 -> IO.Output
+mainForHost : IO.Input -> IO.Output
 mainForHost = \a -> main a

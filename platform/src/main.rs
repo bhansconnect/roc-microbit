@@ -1,17 +1,19 @@
 #![no_main]
 #![no_std]
+#![feature(type_alias_impl_trait)]
 
-use cortex_m_rt::entry;
-// use embedded_hal::blocking::delay::DelayMs;
-use microbit::{board::Board, display::blocking::Display, hal::Timer};
-use panic_rtt_target as _;
-use rtt_target::{rprintln, rtt_init_print};
-// use panic_halt as _;
+use defmt::Format;
+use embassy::executor::Spawner;
+use embassy::time::{Duration, Timer};
+use embassy_nrf::gpio::{AnyPin, Input, Level, Output, OutputDrive, Pin, Pull};
+use embassy_nrf::{interrupt, peripherals, twim, Peripherals};
+
+mod fmt;
 
 mod memory;
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Row {
     a: u8,
     b: u8,
@@ -21,7 +23,7 @@ struct Row {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct DisplayData {
     a: Row,
     b: Row,
@@ -42,40 +44,172 @@ impl DisplayData {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Default)]
-struct Output {
-    // TODO: move this out of here and make it a proper boxed model.
-    // Currently for simplicity, the state is just a u64.
-    next: u64,
-    display: DisplayData,
+impl defmt::Format for DisplayData {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{:?}", self.to_bytes())
+    }
 }
 
-fn roc_main(i: u64) -> Output {
+const CUTEBOT_ADDR: u8 = 0x10;
+
+const DEFAULT_DELAY_MS: u64 = 2;
+struct Display<'d> {
+    cols: [Output<'d, AnyPin>; 5],
+    rows: [Output<'d, AnyPin>; 5],
+}
+
+impl<'d> Display<'d> {
+    fn new(
+        p0_28: peripherals::P0_28,
+        p0_11: peripherals::P0_11,
+        p0_31: peripherals::P0_31,
+        p1_05: peripherals::P1_05,
+        p0_30: peripherals::P0_30,
+        p0_21: peripherals::P0_21,
+        p0_22: peripherals::P0_22,
+        p0_15: peripherals::P0_15,
+        p0_24: peripherals::P0_24,
+        p0_19: peripherals::P0_19,
+    ) -> Display<'d> {
+        Display {
+            cols: [
+                Output::new(p0_28.degrade(), Level::High, OutputDrive::Standard),
+                Output::new(p0_11.degrade(), Level::High, OutputDrive::Standard),
+                Output::new(p0_31.degrade(), Level::High, OutputDrive::Standard),
+                Output::new(p1_05.degrade(), Level::High, OutputDrive::Standard),
+                Output::new(p0_30.degrade(), Level::High, OutputDrive::Standard),
+            ],
+            rows: [
+                Output::new(p0_21.degrade(), Level::Low, OutputDrive::Standard),
+                Output::new(p0_22.degrade(), Level::Low, OutputDrive::Standard),
+                Output::new(p0_15.degrade(), Level::Low, OutputDrive::Standard),
+                Output::new(p0_24.degrade(), Level::Low, OutputDrive::Standard),
+                Output::new(p0_19.degrade(), Level::Low, OutputDrive::Standard),
+            ],
+        }
+    }
+
+    // TODO: Maybe claim a timer and make this non-blocking.
+    async fn show(&mut self, data: &DisplayData, duration_ms: u64) {
+        let loops = duration_ms / (5 * DEFAULT_DELAY_MS);
+        let matrix = data.to_bytes();
+
+        for _ in 0..loops {
+            for (row, pixel_line) in self.rows.iter_mut().zip(matrix.iter()) {
+                row.set_high();
+                for (col, pixel) in self.cols.iter_mut().zip(pixel_line.iter()) {
+                    // TODO: deal with dimming.
+                    if *pixel > 0 {
+                        col.set_low();
+                    }
+                }
+                Timer::after(Duration::from_millis(DEFAULT_DELAY_MS)).await;
+                row.set_low();
+                for col in self.cols.iter_mut() {
+                    col.set_high();
+                }
+            }
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Format, Default, Clone)]
+enum LightLevel {
+    #[default]
+    Bright = 0,
+    Dark = 1,
+}
+
+#[repr(C)]
+#[derive(Format, Default, Clone)]
+struct RocInput {
+    state: u64,
+    light_left: LightLevel,
+    light_right: LightLevel,
+}
+
+#[repr(C)]
+#[derive(Format, Default)]
+struct RocOutput {
+    delay_ms: u64,
+    state: u64,
+    display: DisplayData,
+    speed_left: i8,
+    speed_right: i8,
+}
+
+fn roc_main(input: RocInput) -> RocOutput {
     #[link(name = "app")]
     extern "C" {
         #[link_name = "roc__mainForHost_1_exposed_generic"]
-        fn call(i: u64, out: &mut Output);
+        fn call(state: u64, light_left: LightLevel, light_right: LightLevel, out: &mut RocOutput);
     }
-    let mut out: Output = Default::default();
-    unsafe { call(i, &mut out) };
+    let mut out: RocOutput = Default::default();
+    unsafe { call(input.state, input.light_left, input.light_right, &mut out) };
     out
 }
 
-#[entry]
-fn main() -> ! {
-    rtt_init_print!();
+#[repr(u8)]
+#[derive(Format, Clone)]
+enum Motor {
+    Left = 0x01,
+    Right = 0x02,
+}
 
-    let board = Board::take().unwrap();
-    let mut timer = Timer::new(board.TIMER0);
-    let mut display = Display::new(board.display_pins);
+async fn write_motor_speed<T: twim::Instance>(
+    i2c: &mut twim::Twim<'_, T>,
+    motor: Motor,
+    speed: i8,
+) -> Result<(), twim::Error> {
+    if speed < -100 || speed > 100 {
+        defmt::warn!("motor speed should be in the range -100 to 100");
+    }
+    let dir = if speed > 0 { 0x02 } else { 0x01 };
+    let speed = if speed >= 0 {
+        speed as u8
+    } else {
+        (-1 * speed) as u8
+    };
+    i2c.write(CUTEBOT_ADDR, &[motor as u8, dir, speed, 0]).await
+}
 
-    let mut i = 0;
+#[embassy::main]
+async fn main(_spawner: Spawner, p: Peripherals) {
+    let config = twim::Config::default();
+    let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+    let mut i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
+
+    let mut disp = Display::new(
+        p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
+    );
+
+    let light_left = Input::new(p.P0_17, Pull::Up);
+    let light_right = Input::new(p.P0_01, Pull::Up);
+    let mut input: RocInput = Default::default();
+    defmt::info!("Starting Main Loop");
     loop {
-        rprintln!("Sending state: {:?}", i);
-        let output = roc_main(i);
-        rprintln!("Roc generated: {:?}", output);
-        display.show(&mut timer, output.display.to_bytes(), 10);
-        i = output.next;
+        defmt::debug!("Input: {}", input);
+        let output = roc_main(input.clone());
+        defmt::debug!("Output: {}", output);
+        write_motor_speed(&mut i2c, Motor::Left, output.speed_left)
+            .await
+            .unwrap();
+        write_motor_speed(&mut i2c, Motor::Right, output.speed_right)
+            .await
+            .unwrap();
+        disp.show(&output.display, output.delay_ms).await;
+
+        input.state = output.state;
+        input.light_left = if light_left.is_high() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        };
+        input.light_right = if light_right.is_high() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        };
     }
 }

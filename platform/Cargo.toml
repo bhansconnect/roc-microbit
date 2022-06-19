@@ -3,14 +3,38 @@ name = "roc-microbit"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies.microbit-v2]
-version = "0.12.0"
-git = "https://github.com/nrf-rs/microbit/"
+[profile.dev]
+debug = 2
+
+[profile.release]
+# Add extra debug info, it doesn't get flashed to the device.
+debug = 2
+codegen-units = 1
+lto = true
+opt-level = "z"
+
+# Optimize dependencies as well.
+[profile.release.package."*"]
+codegen-units = 1
+opt-level = "z"
+
+[features]
+default = ["nightly"]
+nightly = ["embassy-nrf/nightly"]
 
 [dependencies]
+embassy = { version = "0.1.0", path = "../embassy/embassy", features = ["defmt"] }
+embassy-nrf = { version = "0.1.0", path = "../embassy/embassy-nrf", features = ["defmt", "nrf52833", "time-driver-rtc1", "gpiote"] }
+
+defmt = "0.3"
+defmt-rtt = "0.3"
+
 cortex-m = "0.7.3"
 cortex-m-rt = "0.7.0"
-panic-halt = "0.2.0"
-embedded-hal = "0.2.0"
-rtt-target = { version = "0.3.1", features = ["cortex-m"] }
-panic-rtt-target = { version = "0.1.2", features = ["cortex-m"] }
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+futures = { version = "0.3.17", default-features = false, features = ["async-await"] }
+rand = { version = "0.8.4", default-features = false }
+embedded-storage = "0.3.0"
+
+usb-device = "0.2"
+usbd-serial = "0.1.1"
