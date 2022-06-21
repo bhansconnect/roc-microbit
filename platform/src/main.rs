@@ -263,17 +263,27 @@ impl<'a, T: twim::Instance> RobotBase<'a, T> {
     async fn front_left_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
         self.drive_motor(4, 3, 5, dir, speed).await
     }
-
     async fn back_left_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
         self.drive_motor(10, 9, 11, dir, speed).await
     }
-
     async fn front_right_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
         self.drive_motor(2, 1, 0, dir, speed).await
     }
-
     async fn back_right_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
         self.drive_motor(8, 7, 6, dir, speed).await
+    }
+
+    async fn stop_front_left_motor(&mut self) -> Result<(), twim::Error> {
+        self.front_left_motor(Direction::Forward, 0).await
+    }
+    async fn stop_back_left_motor(&mut self) -> Result<(), twim::Error> {
+        self.back_left_motor(Direction::Forward, 0).await
+    }
+    async fn stop_front_right_motor(&mut self) -> Result<(), twim::Error> {
+        self.front_right_motor(Direction::Forward, 0).await
+    }
+    async fn stop_back_right_motor(&mut self) -> Result<(), twim::Error> {
+        self.back_right_motor(Direction::Forward, 0).await
     }
 }
 
@@ -286,11 +296,11 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         .await
         .expect("Failed to initialize robot base.");
     robot_base
-        .front_left_motor(Direction::Reverse, 4096 / 4)
+        .front_left_motor(Direction::Forward, 4096 / 4)
         .await
         .unwrap();
     robot_base
-        .back_left_motor(Direction::Forward, 4096 / 4)
+        .back_left_motor(Direction::Reverse, 4096 / 4)
         .await
         .unwrap();
     robot_base
@@ -302,22 +312,10 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         .await
         .unwrap();
     Timer::after(Duration::from_secs(5)).await;
-    robot_base
-        .front_left_motor(Direction::Reverse, 0)
-        .await
-        .unwrap();
-    robot_base
-        .back_left_motor(Direction::Forward, 0)
-        .await
-        .unwrap();
-    robot_base
-        .front_right_motor(Direction::Reverse, 0)
-        .await
-        .unwrap();
-    robot_base
-        .back_right_motor(Direction::Forward, 0)
-        .await
-        .unwrap();
+    robot_base.stop_front_left_motor().await.unwrap();
+    robot_base.stop_back_left_motor().await.unwrap();
+    robot_base.stop_front_right_motor().await.unwrap();
+    robot_base.stop_back_right_motor().await.unwrap();
 
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
