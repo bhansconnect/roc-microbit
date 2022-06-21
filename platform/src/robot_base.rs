@@ -1,5 +1,5 @@
 use defmt::Format;
-use embassy::time::{Duration, Timer};
+use embassy::time::{self, Duration, Instant, Timer};
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
 use embassy_nrf::{peripherals, twim};
 
@@ -110,7 +110,7 @@ impl<'d, T: twim::Instance> RobotBase<'d, T> {
         Ok(())
     }
 
-    pub fn light_left(&mut self) -> LightLevel {
+    pub fn light_left(&self) -> LightLevel {
         if self.left_light_sensor.is_low() {
             LightLevel::Bright
         } else {
@@ -118,12 +118,57 @@ impl<'d, T: twim::Instance> RobotBase<'d, T> {
         }
     }
 
-    pub fn light_right(&mut self) -> LightLevel {
+    pub fn light_right(&self) -> LightLevel {
         if self.right_light_sensor.is_low() {
             LightLevel::Bright
         } else {
             LightLevel::Dark
         }
+    }
+
+    pub fn sonar_distance(&mut self) -> Option<u32> {
+        const MAX_SENSOR_DELAY: u64 = 35000;
+        const MAX_SENSOR_DISTANCE_CM: u64 = 300;
+        // Note: 58 assumes room temperature.
+        // At 0 C, it would be 60.
+        const US_ROUNDTRIP_CM: u64 = 58;
+        const MAX_ECHO_TIME: u64 = MAX_SENSOR_DISTANCE_CM * US_ROUNDTRIP_CM + (US_ROUNDTRIP_CM / 2);
+        // These should be 4us and 20us respectively, but we are limited by the tick rate of the nrf at 32kHz.
+        self.sonar_trig.set_low();
+        time::block_for(Duration::from_ticks(1));
+        self.sonar_trig.set_high();
+        time::block_for(Duration::from_ticks(1));
+        self.sonar_trig.set_low();
+
+        if self.sonar_echo.is_high() {
+            defmt::warn!("Sonar pulses too close together. Echo is still high.");
+            return None;
+        }
+        let start = Instant::now();
+        let timeout = start + Duration::from_micros(MAX_SENSOR_DELAY);
+        while !self.sonar_echo.is_high() {
+            if Instant::now() > timeout {
+                defmt::warn!(
+                    "Timed out while waiting to measure sonar distances: {}us",
+                    start.elapsed().as_micros()
+                );
+                return None;
+            }
+        }
+        let start = Instant::now();
+        let timeout = start + Duration::from_micros(MAX_ECHO_TIME);
+        while self.sonar_echo.is_high() {
+            if Instant::now() > timeout {
+                defmt::warn!(
+                    "Timed out while measuring sonar distances: {}us",
+                    start.elapsed().as_micros()
+                );
+                return None;
+            }
+        }
+        let echo_time = start.elapsed().as_micros();
+
+        Some(((echo_time + US_ROUNDTRIP_CM / 2) / US_ROUNDTRIP_CM) as u32)
     }
 
     async fn drive_motor(

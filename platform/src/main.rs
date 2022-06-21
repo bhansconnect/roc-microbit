@@ -158,6 +158,7 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let mut input: RocInput = Default::default();
     defmt::info!("Starting Main Loop");
     loop {
+        defmt::debug!("Sonar Distance: {:?}", robot_base.sonar_distance());
         defmt::debug!("Input: {}", input);
         let output = roc_main(input.clone());
         defmt::debug!("Output: {}", output);
