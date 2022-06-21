@@ -133,11 +133,10 @@ impl<'d, T: twim::Instance> RobotBase<'d, T> {
         // At 0 C, it would be 60.
         const US_ROUNDTRIP_CM: u64 = 58;
         const MAX_ECHO_TIME: u64 = MAX_SENSOR_DISTANCE_CM * US_ROUNDTRIP_CM + (US_ROUNDTRIP_CM / 2);
-        // These should be 4us and 20us respectively, but we are limited by the tick rate of the nrf at 32kHz.
         self.sonar_trig.set_low();
-        time::block_for(Duration::from_ticks(1));
+        time::block_for(Duration::from_micros(4));
         self.sonar_trig.set_high();
-        time::block_for(Duration::from_ticks(1));
+        time::block_for(Duration::from_micros(10));
         self.sonar_trig.set_low();
 
         if self.sonar_echo.is_high() {
