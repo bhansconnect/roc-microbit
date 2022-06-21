@@ -50,8 +50,6 @@ impl defmt::Format for DisplayData {
     }
 }
 
-const CUTEBOT_ADDR: u8 = 0x10;
-
 const DEFAULT_DELAY_MS: u64 = 2;
 struct Display<'d> {
     cols: [Output<'d, AnyPin>; 5],
@@ -151,34 +149,175 @@ fn roc_main(input: RocInput) -> RocOutput {
 }
 
 #[repr(u8)]
-#[derive(Format, Clone)]
-enum Motor {
-    Left = 0x01,
-    Right = 0x02,
+#[derive(Format, Default, Clone)]
+enum LightState {
+    #[default]
+    Off = 0,
+    On = 1,
 }
 
-async fn write_motor_speed<T: twim::Instance>(
-    i2c: &mut twim::Twim<'_, T>,
-    motor: Motor,
-    speed: i8,
-) -> Result<(), twim::Error> {
-    if speed < -100 || speed > 100 {
-        defmt::warn!("motor speed should be in the range -100 to 100");
+#[repr(u8)]
+#[derive(Format, Default, Clone)]
+enum Direction {
+    #[default]
+    Forward = 0,
+    Reverse = 1,
+}
+
+// Robot Base is now KeyeStudio Microbit 4WD Mecanum Robot Kit.
+const BASE_ADDR: u8 = 0x47;
+struct RobotBase<'a, T: twim::Instance> {
+    i2c: twim::Twim<'a, T>,
+}
+impl<'a, T: twim::Instance> RobotBase<'a, T> {
+    async fn new(i2c: twim::Twim<'a, T>) -> Result<RobotBase<'a, T>, twim::Error> {
+        let mut rb = RobotBase { i2c };
+        rb.i2c.write(BASE_ADDR, &[0x00, 0x00]).await?;
+        rb.set_all_pwm(0, 0).await?;
+        rb.i2c.write(BASE_ADDR, &[0x01, 0x04]).await?;
+        rb.i2c.write(BASE_ADDR, &[0x00, 0x01]).await?;
+
+        Timer::after(Duration::from_millis(5)).await;
+
+        rb.i2c.write(BASE_ADDR, &[0x00]).await?;
+        let mut models = [0];
+        rb.i2c.read(BASE_ADDR, &mut models).await?;
+        let model = models[0] & !0x10;
+        rb.i2c.write(BASE_ADDR, &[0x00, model]).await?;
+        Timer::after(Duration::from_millis(5)).await;
+        Ok(rb)
     }
-    let dir = if speed > 0 { 0x02 } else { 0x01 };
-    let speed = if speed >= 0 {
-        speed as u8
-    } else {
-        (-1 * speed) as u8
-    };
-    i2c.write(CUTEBOT_ADDR, &[motor as u8, dir, speed, 0]).await
+    async fn set_pwm(&mut self, channel: u8, on: u16, off: u16) -> Result<(), twim::Error> {
+        self.i2c
+            .write(BASE_ADDR, &[0x06 + 4 * channel, (on & 0xFF) as u8])
+            .await?;
+        self.i2c
+            .write(BASE_ADDR, &[0x07 + 4 * channel, (on >> 8) as u8])
+            .await?;
+        self.i2c
+            .write(BASE_ADDR, &[0x08 + 4 * channel, (off & 0xFF) as u8])
+            .await?;
+        self.i2c
+            .write(BASE_ADDR, &[0x09 + 4 * channel, (off >> 8) as u8])
+            .await?;
+        Ok(())
+    }
+
+    async fn set_all_pwm(&mut self, on: u16, off: u16) -> Result<(), twim::Error> {
+        self.i2c
+            .write(BASE_ADDR, &[0xFA, (on & 0xFF) as u8])
+            .await?;
+        self.i2c.write(BASE_ADDR, &[0xFB, (on >> 8) as u8]).await?;
+        self.i2c
+            .write(BASE_ADDR, &[0xFC, (off & 0xFF) as u8])
+            .await?;
+        self.i2c.write(BASE_ADDR, &[0xFD, (off >> 8) as u8]).await?;
+        Ok(())
+    }
+
+    async fn left_led(&mut self, state: LightState) -> Result<(), twim::Error> {
+        match state {
+            LightState::On => self.set_pwm(12, 0, 4095).await?,
+            LightState::Off => self.set_pwm(12, 0, 0).await?,
+        };
+        Ok(())
+    }
+
+    async fn right_led(&mut self, state: LightState) -> Result<(), twim::Error> {
+        match state {
+            LightState::On => self.set_pwm(13, 0, 4095).await?,
+            LightState::Off => self.set_pwm(13, 0, 0).await?,
+        };
+        Ok(())
+    }
+
+    async fn drive_motor(
+        &mut self,
+        pwm0: u8,
+        pwm1: u8,
+        pwm2: u8,
+        dir: Direction,
+        speed: u16,
+    ) -> Result<(), twim::Error> {
+        if speed > 4095 {
+            defmt::warn!(
+                "Speed should be between 0 and 4095 inclusive. Got speed: {}",
+                speed,
+            );
+        }
+        match dir {
+            Direction::Forward => {
+                self.set_pwm(pwm0, 0, 0).await?;
+                self.set_pwm(pwm1, 4096, 0).await?;
+                self.set_pwm(pwm2, 0, speed).await?;
+            }
+            Direction::Reverse => {
+                self.set_pwm(pwm0, 4096, 0).await?;
+                self.set_pwm(pwm1, 0, 0).await?;
+                self.set_pwm(pwm2, 0, speed).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn front_left_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
+        self.drive_motor(4, 3, 5, dir, speed).await
+    }
+
+    async fn back_left_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
+        self.drive_motor(10, 9, 11, dir, speed).await
+    }
+
+    async fn front_right_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
+        self.drive_motor(2, 1, 0, dir, speed).await
+    }
+
+    async fn back_right_motor(&mut self, dir: Direction, speed: u16) -> Result<(), twim::Error> {
+        self.drive_motor(8, 7, 6, dir, speed).await
+    }
 }
 
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
     let config = twim::Config::default();
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-    let mut i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
+    let i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
+    let mut robot_base = RobotBase::new(i2c)
+        .await
+        .expect("Failed to initialize robot base.");
+    robot_base
+        .front_left_motor(Direction::Reverse, 4096 / 4)
+        .await
+        .unwrap();
+    robot_base
+        .back_left_motor(Direction::Forward, 4096 / 4)
+        .await
+        .unwrap();
+    robot_base
+        .front_right_motor(Direction::Reverse, 4096 / 4)
+        .await
+        .unwrap();
+    robot_base
+        .back_right_motor(Direction::Forward, 4096 / 4)
+        .await
+        .unwrap();
+    Timer::after(Duration::from_secs(5)).await;
+    robot_base
+        .front_left_motor(Direction::Reverse, 0)
+        .await
+        .unwrap();
+    robot_base
+        .back_left_motor(Direction::Forward, 0)
+        .await
+        .unwrap();
+    robot_base
+        .front_right_motor(Direction::Reverse, 0)
+        .await
+        .unwrap();
+    robot_base
+        .back_right_motor(Direction::Forward, 0)
+        .await
+        .unwrap();
 
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
@@ -192,12 +331,6 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         defmt::debug!("Input: {}", input);
         let output = roc_main(input.clone());
         defmt::debug!("Output: {}", output);
-        write_motor_speed(&mut i2c, Motor::Left, output.speed_left)
-            .await
-            .unwrap();
-        write_motor_speed(&mut i2c, Motor::Right, output.speed_right)
-            .await
-            .unwrap();
         disp.show(&output.display, output.delay_ms).await;
 
         input.state = output.state;
