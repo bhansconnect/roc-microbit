@@ -166,12 +166,28 @@ enum Direction {
 
 // Robot Base is now KeyeStudio Microbit 4WD Mecanum Robot Kit.
 const BASE_ADDR: u8 = 0x47;
-struct RobotBase<'a, T: twim::Instance> {
-    i2c: twim::Twim<'a, T>,
+struct RobotBase<'d, T: twim::Instance> {
+    i2c: twim::Twim<'d, T>,
+    left_light_sensor: Input<'d, peripherals::P0_03>,
+    right_light_sensor: Input<'d, peripherals::P0_04>,
+    sonar_trig: Output<'d, peripherals::P0_13>,
+    sonar_echo: Input<'d, peripherals::P1_02>,
 }
-impl<'a, T: twim::Instance> RobotBase<'a, T> {
-    async fn new(i2c: twim::Twim<'a, T>) -> Result<RobotBase<'a, T>, twim::Error> {
-        let mut rb = RobotBase { i2c };
+impl<'d, T: twim::Instance> RobotBase<'d, T> {
+    async fn new(
+        i2c: twim::Twim<'d, T>,
+        ll: peripherals::P0_03,
+        rl: peripherals::P0_04,
+        st: peripherals::P0_13,
+        se: peripherals::P1_02,
+    ) -> Result<RobotBase<'d, T>, twim::Error> {
+        let mut rb = RobotBase {
+            i2c,
+            left_light_sensor: Input::new(ll, Pull::Down),
+            right_light_sensor: Input::new(rl, Pull::Down),
+            sonar_trig: Output::new(st, Level::Low, OutputDrive::Standard),
+            sonar_echo: Input::new(se, Pull::Down),
+        };
         rb.i2c.write(BASE_ADDR, &[0x00, 0x00]).await?;
         rb.set_all_pwm(0, 0).await?;
         rb.i2c.write(BASE_ADDR, &[0x01, 0x04]).await?;
@@ -229,6 +245,22 @@ impl<'a, T: twim::Instance> RobotBase<'a, T> {
             LightState::Off => self.set_pwm(13, 0, 0).await?,
         };
         Ok(())
+    }
+
+    fn left_light(&mut self) -> LightLevel {
+        if self.left_light_sensor.is_low() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        }
+    }
+
+    fn right_light(&mut self) -> LightLevel {
+        if self.right_light_sensor.is_low() {
+            LightLevel::Bright
+        } else {
+            LightLevel::Dark
+        }
     }
 
     async fn drive_motor(
@@ -292,30 +324,9 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let config = twim::Config::default();
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
     let i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
-    let mut robot_base = RobotBase::new(i2c)
+    let mut robot_base = RobotBase::new(i2c, p.P0_03, p.P0_04, p.P0_13, p.P1_02)
         .await
         .expect("Failed to initialize robot base.");
-    robot_base
-        .front_left_motor(Direction::Forward, 4096 / 4)
-        .await
-        .unwrap();
-    robot_base
-        .back_left_motor(Direction::Reverse, 4096 / 4)
-        .await
-        .unwrap();
-    robot_base
-        .front_right_motor(Direction::Reverse, 4096 / 4)
-        .await
-        .unwrap();
-    robot_base
-        .back_right_motor(Direction::Forward, 4096 / 4)
-        .await
-        .unwrap();
-    Timer::after(Duration::from_secs(5)).await;
-    robot_base.stop_front_left_motor().await.unwrap();
-    robot_base.stop_back_left_motor().await.unwrap();
-    robot_base.stop_front_right_motor().await.unwrap();
-    robot_base.stop_back_right_motor().await.unwrap();
 
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
@@ -331,16 +342,25 @@ async fn main(_spawner: Spawner, p: Peripherals) {
         defmt::debug!("Output: {}", output);
         disp.show(&output.display, output.delay_ms).await;
 
+        robot_base
+            .front_left_motor(Direction::Forward, output.speed_left as u16 * 40)
+            .await
+            .unwrap();
+        robot_base
+            .back_left_motor(Direction::Forward, output.speed_left as u16 * 40)
+            .await
+            .unwrap();
+        robot_base
+            .front_right_motor(Direction::Forward, output.speed_right as u16 * 40)
+            .await
+            .unwrap();
+        robot_base
+            .back_right_motor(Direction::Forward, output.speed_right as u16 * 40)
+            .await
+            .unwrap();
+
         input.state = output.state;
-        input.light_left = if light_left.is_high() {
-            LightLevel::Bright
-        } else {
-            LightLevel::Dark
-        };
-        input.light_right = if light_right.is_high() {
-            LightLevel::Bright
-        } else {
-            LightLevel::Dark
-        };
+        input.light_left = robot_base.left_light();
+        input.light_right = robot_base.right_light();
     }
 }
