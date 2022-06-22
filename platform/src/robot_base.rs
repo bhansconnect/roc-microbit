@@ -1,7 +1,7 @@
 use defmt::Format;
 use embassy::time::{self, Duration, Instant, Timer};
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
-use embassy_nrf::{peripherals, twim};
+use embassy_nrf::{peripherals, pwm, twim};
 
 #[repr(u8)]
 #[derive(Format, Default, Clone)]
@@ -29,28 +29,39 @@ pub enum Direction {
 
 // Robot Base is now KeyeStudio Microbit 4WD Mecanum Robot Kit.
 const BASE_ADDR: u8 = 0x47;
-pub struct RobotBase<'d, T: twim::Instance> {
+pub struct RobotBase<'d, T: twim::Instance, P: pwm::Instance> {
     i2c: twim::Twim<'d, T>,
     left_light_sensor: Input<'d, peripherals::P0_03>,
     right_light_sensor: Input<'d, peripherals::P0_04>,
     sonar_trig: Output<'d, peripherals::P0_13>,
     sonar_echo: Input<'d, peripherals::P1_02>,
+    servo: pwm::SimplePwm<'d, P>,
 }
-impl<'d, T: twim::Instance> RobotBase<'d, T> {
+impl<'d, T: twim::Instance, P: pwm::Instance> RobotBase<'d, T, P> {
     pub async fn new(
         i2c: twim::Twim<'d, T>,
         ll: peripherals::P0_03,
         rl: peripherals::P0_04,
         st: peripherals::P0_13,
         se: peripherals::P1_02,
-    ) -> Result<RobotBase<'d, T>, twim::Error> {
+        servo: peripherals::P0_01,
+        pwm: P,
+    ) -> Result<RobotBase<'d, T, P>, twim::Error> {
         let mut rb = RobotBase {
             i2c,
             left_light_sensor: Input::new(ll, Pull::Down),
             right_light_sensor: Input::new(rl, Pull::Down),
             sonar_trig: Output::new(st, Level::Low, OutputDrive::Standard),
             sonar_echo: Input::new(se, Pull::Down),
+            servo: pwm::SimplePwm::new_1ch(pwm, servo),
         };
+        // microservo requires 50hz or 20ms period
+        // set_period can only set down to 125khz so we cant use it directly
+        // Div128 is 125khz or 0.000008s or 0.008ms, 20/0.008 is 2500 is top
+        rb.servo.set_prescaler(pwm::Prescaler::Div128);
+        rb.servo.set_max_duty(2500);
+        rb.servo.disable();
+
         rb.i2c.write(BASE_ADDR, &[0x00, 0x00]).await?;
         rb.set_all_pwm(0, 0).await?;
         rb.i2c.write(BASE_ADDR, &[0x01, 0x04]).await?;
@@ -66,6 +77,7 @@ impl<'d, T: twim::Instance> RobotBase<'d, T> {
         Timer::after(Duration::from_millis(5)).await;
         Ok(rb)
     }
+
     async fn set_pwm(&mut self, channel: u8, on: u16, off: u16) -> Result<(), twim::Error> {
         self.i2c
             .write(BASE_ADDR, &[0x06 + 4 * channel, (on & 0xFF) as u8])
@@ -92,6 +104,34 @@ impl<'d, T: twim::Instance> RobotBase<'d, T> {
             .await?;
         self.i2c.write(BASE_ADDR, &[0xFD, (off >> 8) as u8]).await?;
         Ok(())
+    }
+
+    pub fn disable_servo(&mut self) {
+        self.servo.disable()
+    }
+
+    pub fn enable_servo(&mut self) {
+        self.servo.enable()
+    }
+
+    pub fn servo(&mut self, angle: u8) {
+        if angle > 180 {
+            defmt::warn!(
+                "Angle should be between 0 and 180 inclusive. Got: {}",
+                angle
+            );
+        }
+        // Servo seems to be slightly off center. Adjusting here.
+        let angle = angle + 5;
+        // 1ms 45deg (1/.008=125), 1.5ms 90deg (1.5/.008=187.5), 2ms 135deg (2/.008=250),
+        // Angle range: about 180°(in 500→2500μsec)
+        // Map value to 500 to 2500 us.
+        let us = angle as u32 * 2000 / 180 + 500;
+        // Divide by 0.008 (multiply by 125) and divide by 1000 to get final value in ms.
+        let off_duty = us * 125 / 1000;
+        let duty = 2500 - off_duty;
+        defmt::debug!("Setting servo to: {}", duty);
+        self.servo.set_duty(0, duty as u16)
     }
 
     pub async fn left_led(&mut self, state: LightState) -> Result<(), twim::Error> {
