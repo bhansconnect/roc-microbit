@@ -142,6 +142,9 @@ fn roc_main(input: RocInput) -> RocOutput {
     out
 }
 
+// So I think the goal is going to be multithreaded sensor reading and output.
+// This way, we can both display images continuously on the display and read sonar/lidar with decent accuracy.
+// Of course, some of that can be offloaded to sensors that just continously scan for us.
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
     let config = twim::Config::default();
