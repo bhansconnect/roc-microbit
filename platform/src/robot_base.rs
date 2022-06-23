@@ -28,6 +28,11 @@ pub enum Direction {
 }
 
 // Robot Base is now KeyeStudio Microbit 4WD Mecanum Robot Kit.
+// TODO: Add Magnometer with some form of calibration (can maybe use lsm303agr crate)
+// TODO: Add Accelerometer (can maybe use lsm303agr crate)
+// TODO: Add ability to turn on leds for line sensors?
+// TODO: Add ability to read ir sensor?
+// TODO: Add serial, ble, or radio for communication to computer?
 const BASE_ADDR: u8 = 0x47;
 pub struct RobotBase<'d, T: twim::Instance, P: pwm::Instance> {
     i2c: twim::Twim<'d, T>,
