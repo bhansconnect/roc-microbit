@@ -38,3 +38,5 @@ embedded-storage = "0.3.0"
 
 usb-device = "0.2"
 usbd-serial = "0.1.1"
+
+nalgebra = { version = "0.31.0", default-features = false }

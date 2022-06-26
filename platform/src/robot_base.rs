@@ -3,6 +3,8 @@ use embassy::time::{self, Duration, Instant, Timer};
 use embassy_nrf::gpio::{Input, Level, Output, OutputDrive, Pull};
 use embassy_nrf::{peripherals, pwm, twim};
 
+// const MATRIX: nalgebra::Matrix1x2<f32> = nalgebra::Matrix1x2::new(0.2, 0.4);
+
 #[repr(u8)]
 #[derive(Format, Default, Clone)]
 pub enum LightLevel {
