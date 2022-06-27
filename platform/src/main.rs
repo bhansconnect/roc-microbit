@@ -157,10 +157,6 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     let mut robot_base = RobotBase::new(i2c1, p.P0_03, p.P0_04, p.P0_13, p.P1_02, p.P0_01, p.PWM0)
         .await
         .expect("Failed to initialize robot base.");
-    robot_base.enable_servo();
-    robot_base.servo(90);
-    Timer::after(Duration::from_secs(2)).await;
-    robot_base.disable_servo();
 
     let mut disp = Display::new(
         p.P0_28, p.P0_11, p.P0_31, p.P1_05, p.P0_30, p.P0_21, p.P0_22, p.P0_15, p.P0_24, p.P0_19,
