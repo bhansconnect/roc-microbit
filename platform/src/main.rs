@@ -4,11 +4,12 @@
 
 use defmt::Format;
 use embassy::executor::Spawner;
-use embassy::time::{Duration, Timer};
+use embassy::time::{Duration, Instant, Timer};
 use embassy_nrf::gpio::{AnyPin, Level, Output, OutputDrive, Pin};
 use embassy_nrf::{interrupt, peripherals, twim, Peripherals};
 
 mod fmt;
+mod lsm303agr;
 mod memory;
 pub mod robot_base;
 
@@ -147,15 +148,18 @@ fn roc_main(input: RocInput) -> RocOutput {
 // Of course, some of that can be offloaded to sensors that just continously scan for us.
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
-    let config = twim::Config::default();
-    let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
-    let i2c = twim::Twim::new(p.TWISPI0, irq, p.P1_00, p.P0_26, config);
-    let mut robot_base = RobotBase::new(i2c, p.P0_03, p.P0_04, p.P0_13, p.P1_02, p.P0_01, p.PWM0)
+    let irq0 = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
+    let i2c0 = twim::Twim::new(p.TWISPI0, irq0, p.P0_16, p.P0_08, twim::Config::default());
+    let mut imu = lsm303agr::Lsm303agr::new(i2c0).await.unwrap();
+
+    let irq1 = interrupt::take!(SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1);
+    let i2c1 = twim::Twim::new(p.TWISPI1, irq1, p.P1_00, p.P0_26, twim::Config::default());
+    let mut robot_base = RobotBase::new(i2c1, p.P0_03, p.P0_04, p.P0_13, p.P1_02, p.P0_01, p.PWM0)
         .await
         .expect("Failed to initialize robot base.");
     robot_base.enable_servo();
     robot_base.servo(90);
-    Timer::after(Duration::from_secs(1)).await;
+    Timer::after(Duration::from_secs(2)).await;
     robot_base.disable_servo();
 
     let mut disp = Display::new(
@@ -164,32 +168,47 @@ async fn main(_spawner: Spawner, p: Peripherals) {
 
     let mut input: RocInput = Default::default();
     defmt::info!("Starting Main Loop");
+    let mut start = Instant::now();
     loop {
-        defmt::debug!("Sonar Distance: {:?}", robot_base.sonar_distance());
-        defmt::debug!("Input: {}", input);
-        let output = roc_main(input.clone());
-        defmt::debug!("Output: {}", output);
-        disp.show(&output.display, output.delay_ms).await;
-
-        robot_base
-            .front_left_motor(Direction::Forward, output.speed_left as u16 * 40)
-            .await
-            .unwrap();
-        robot_base
-            .back_left_motor(Direction::Forward, output.speed_left as u16 * 40)
-            .await
-            .unwrap();
-        robot_base
-            .front_right_motor(Direction::Forward, output.speed_right as u16 * 40)
-            .await
-            .unwrap();
-        robot_base
-            .back_right_motor(Direction::Forward, output.speed_right as u16 * 40)
-            .await
-            .unwrap();
-
-        input.state = output.state;
-        input.light_left = robot_base.light_left();
-        input.light_right = robot_base.light_right();
+        if imu.mag_ready().await.unwrap() {
+            let data = imu.mag_data().await.unwrap();
+            let elapsed = start.elapsed();
+            start = Instant::now();
+            defmt::info!(
+                "Data: ({}, {}, {}) with delay: {}us",
+                data.x,
+                data.y,
+                data.z,
+                elapsed.as_micros()
+            );
+        }
     }
+    // loop {
+    //     defmt::debug!("Sonar Distance: {:?}", robot_base.sonar_distance());
+    //     // defmt::debug!("Input: {}", input);
+    //     let output = roc_main(input.clone());
+    //     // defmt::debug!("Output: {}", output);
+    //     disp.show(&output.display, output.delay_ms).await;
+
+    //     robot_base
+    //         .front_left_motor(Direction::Forward, output.speed_left as u16 * 40)
+    //         .await
+    //         .unwrap();
+    //     robot_base
+    //         .back_left_motor(Direction::Forward, output.speed_left as u16 * 40)
+    //         .await
+    //         .unwrap();
+    //     robot_base
+    //         .front_right_motor(Direction::Forward, output.speed_right as u16 * 40)
+    //         .await
+    //         .unwrap();
+    //     robot_base
+    //         .back_right_motor(Direction::Forward, output.speed_right as u16 * 40)
+    //         .await
+    //         .unwrap();
+
+    //     input.state = output.state;
+    //     input.light_left = robot_base.light_left();
+    //     input.light_right = robot_base.light_right();
+    // }
 }
