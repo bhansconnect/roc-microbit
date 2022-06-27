@@ -164,19 +164,10 @@ async fn main(_spawner: Spawner, p: Peripherals) {
 
     let mut input: RocInput = Default::default();
     defmt::info!("Starting Main Loop");
-    let mut start = Instant::now();
     loop {
         if imu.mag_ready().await.unwrap() {
             let data = imu.mag_data().await.unwrap();
-            let elapsed = start.elapsed();
-            start = Instant::now();
-            defmt::info!(
-                "Data: ({}, {}, {}) with delay: {}us",
-                data.x,
-                data.y,
-                data.z,
-                elapsed.as_micros()
-            );
+            defmt::info!("{}, {}", data.x, data.z,);
         }
     }
     // loop {

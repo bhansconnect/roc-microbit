@@ -11,7 +11,8 @@ const OUT_BASE_REG_M: u8 = 0x68;
 
 pub struct MagData {
     pub x: i32,
-    pub y: i32,
+    // TODO: Maybe re-add y, but it is not used for the current robot or calibrated.
+    // pub y: i32,
     pub z: i32,
 }
 
@@ -47,18 +48,27 @@ impl<'d, T: twim::Instance> Lsm303agr<'d, T> {
             .write_read(MAG_ADDR, &[OUT_BASE_REG_M | 0x80], &mut data)
             .await?;
         let x = (u16::from(data[0]) | (u16::from(data[1]) << 8)) as i16;
-        let y = (u16::from(data[2]) | (u16::from(data[3]) << 8)) as i16;
+        // let y = (u16::from(data[2]) | (u16::from(data[3]) << 8)) as i16;
         let z = (u16::from(data[4]) | (u16::from(data[5]) << 8)) as i16;
         // These need to be scaled by 1.5 to be converted from raw to milliGuass.
         // We also convert them from milliGauss to nanoTesla by multiplying by 100.
         // This leads to times 150.
         let scaled_x = x as i32 * 150;
-        let scaled_y = y as i32 * 150;
+        // let scaled_y = y as i32 * 150;
         let scaled_z = z as i32 * 150;
+
+        // Finally apply hard and soft iron calibration.
+        // These were calculated with this method: https://www.appelsiini.net/2018/calibrate-magnetometer/
+        // Center: (77325, -11700.0)
+        // Scale: (0.9636118598382749, 1.0392441860465116)
+        // Note, the USB cable definitely affects the hard iron offset...so this is probably off by a few thousand.
+        // Staying in interger since the numbers are between +/-35,000
+        let calibrated_x = ((scaled_x - 77325) * 09_636) / 10_000;
+        let calibrated_z = ((scaled_z + 11700) * 11_700) / 10_000;
         Ok(MagData {
-            x: scaled_x,
-            y: scaled_y,
-            z: scaled_z,
+            x: calibrated_x,
+            // y: scaled_y,
+            z: calibrated_z,
         })
     }
 }
