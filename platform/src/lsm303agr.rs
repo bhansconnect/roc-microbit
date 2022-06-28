@@ -86,25 +86,6 @@ impl<'d, T: twim::Instance> Lsm303agr<'d, T> {
 // Would this require adding x and z as state variables?
 // Actually I think it may require making magnitude a measurement?
 
-// State Update:
-// angle = angle + delta_angle * dt
-// Everything else is constant
-
-// Control input
-// None? x and y do not lead to direct changes in any state.
-// They just map to state via measurement equations.
-
-// Measurements:
-// x and z from magnometer
-
-// Need to find the jaobians for linearization.
-// They will make the real F and H matrix from the equations above.
-// State update jacobian
-// Just start with identity and set (angle,delta_angle) to dt.
-
-// R should just be the measurement variance. Probably measure it with the pwm on cause it adds extra noise.
-// Maybe measure at multiple angles.
-
 // We currently don't have any other angle sensors, so this will just estimate by itself.
 // Once we have wheel encoders, it should be possible to get a pretty noisy delta angle reading.
 // This is a Kalman filter that will go from x, z to the angle of heading.
@@ -156,6 +137,9 @@ impl MagFilter {
     }
 
     fn predict(&mut self) {
+        // State Update:
+        // angle = angle + delta_angle * dt
+        // Everything else is constant
         let dt = self.last_t.elapsed();
         self.last_t = Instant::now();
         let mut f = na::SMatrix::<f32, 7, 7>::identity();
