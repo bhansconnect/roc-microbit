@@ -1,3 +1,4 @@
+use embassy::time::Instant;
 use embassy_nrf::twim;
 
 // const ACCEL_ADDR: u8 = 0b0011001;
@@ -70,5 +71,148 @@ impl<'d, T: twim::Instance> Lsm303agr<'d, T> {
             // y: scaled_y,
             z: calibrated_z,
         })
+    }
+
+    pub async fn mag_heading(&mut self) -> Result<(MagData, f32), twim::Error> {
+        let data = self.mag_data().await?;
+        let heading = libm::atan2f(data.x as f32, data.z as f32);
+        Ok((data, heading))
+    }
+}
+
+// Where would I add the fact that magnitude = sqrt(x*x+z*z)?
+// Would this require adding x and z as state variables?
+// Actually I think it may require making magnitude a measurement?
+
+// State Update:
+// angle = angle + delta_angle * dt
+// Everything else is constant
+
+// Control input
+// None? x and y do not lead to direct changes in any state.
+// They just map to state via measurement equations.
+
+// Measurements:
+// x and z from magnometer
+// Measurement equations:
+// x = (magnitude * sin(angle) * x_scale) + x_bias
+// z = (magnitude * cos(angle) * z_scale) + z_bias
+
+// Need to find the jaobians for linearization.
+// They will make the real F and H matrix from the equations above.
+// State update jacobian
+// Just start with identity and set (angle,delta_angle) to dt.
+
+// R should just be the measurement variance. Probably measure it with the pwm on cause it adds extra noise.
+// Maybe measure at multiple angles.
+
+// We currently don't have any other angle sensors, so this will just estimate by itself.
+// Once we have wheel encoders, it should be possible to get a pretty noisy delta angle reading.
+// This is a Kalman filter that will go from x, z to the angle of heading.
+pub struct MagFilter {
+    // State is tracking angle, delta_angle, magnitude, x_bias, z_bias, x_scale, z_scale.
+    last_t: Instant,
+    x: na::SVector<f32, 7>,    // State Vector
+    p: na::SMatrix<f32, 7, 7>, // Estimate Uncertainty
+    q: na::SMatrix<f32, 7, 7>, // Process Noise Uncertainty
+    r: na::SMatrix<f32, 2, 2>, // Measurement Uncertainty
+}
+
+impl MagFilter {
+    pub fn new(mag_full: (MagData, f32), reading_time: Instant) -> MagFilter {
+        let (mag_data, heading) = mag_full;
+        let x = mag_data.x as f32;
+        let z = mag_data.z as f32;
+        let magnitude = libm::sqrtf(x * x + z * z);
+        MagFilter {
+            last_t: reading_time,
+            x: na::SVector::from([heading, 0.0, magnitude, 0.0, 0.0, 1.0, 1.0]),
+            // TODO: Actually setup/tune below values this.
+            #[rustfmt::skip]
+            p: na::SMatrix::from_row_slice(&[
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]),
+            #[rustfmt::skip]
+            q: na::SMatrix::from_row_slice(&[
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]),
+            #[rustfmt::skip]
+            r: na::SMatrix::from_row_slice(&[
+                1.0, 0.0,
+                0.0, 1.0,
+            ]),
+        }
+    }
+
+    fn predict(&mut self) {
+        let dt = self.last_t.elapsed();
+        self.last_t = Instant::now();
+        let mut f = na::SMatrix::<f32, 7, 7>::identity();
+        // angle, delta_angle = dt
+        f[(0, 1)] = dt.as_micros() as f32 / 1_000_000.0;
+
+        self.x = f * self.x;
+        self.p = f * self.p * f.transpose() + self.q;
+    }
+
+    fn update(&mut self, mag_full: (MagData, f32)) -> na::SVector<f32, 7> {
+        let (mag_data, heading) = mag_full;
+        let angle = self.x[0];
+        // let dangle = self.x[1];
+        let magnitude = self.x[2];
+        let x_bias = self.x[3];
+        let z_bias = self.x[4];
+        let x_scale = self.x[5];
+        let z_scale = self.x[6];
+        let sin_angle = libm::sinf(angle);
+        let cos_angle = libm::cosf(angle);
+        // Measurement jacobian.
+        #[rustfmt::skip]
+        let h = na::SMatrix::<f32, 2, 7>::from_row_slice(&[
+            // dx/d_angle = magnitude * cos(angle) * x_scale
+            magnitude * cos_angle * x_scale, 0.0,
+            // dz/d_angle = magnitude * -1 * sin(angle) * z_scale
+            0.0, magnitude * -1.0 * sin_angle * z_scale,
+            // dx/d2_angle = 0
+            0.0, 0.0,
+            // dx/d_magnitude = sin(angle) * x_scale
+            sin_angle * x_scale, 0.0,
+            // dz/d_magnitude = cos(angle) * z_scale
+            0.0, cos_angle * z_scale,
+            // dx/d_x_bias = 1
+            1.0, 0.0,
+            // dz/d_z_bias = 1
+            0.0, 1.0,
+            // dx/d_x_scale = magnitide * sin(angle)
+            magnitude * sin_angle, 0.0,
+            // dz/d_z_scale = magnitide * cos(angle)
+            0.0, magnitude * cos_angle,
+        ]);
+
+        // TODO: investigate inverse, maybe use pseudo inverse?
+        let k =
+            self.p * h.transpose() * (h * self.p * h.transpose() + self.r).try_inverse().unwrap();
+        let t = na::SMatrix::identity() - k * h;
+        self.p = t * self.p * t.transpose() + k * self.r * k.transpose();
+        let z = na::SVector::from([mag_data.x as f32, mag_data.z as f32]);
+        self.x = self.x + k * (z - h * self.x);
+        self.x
+    }
+
+    pub fn predict_and_update(&mut self, mag_full: (MagData, f32)) -> na::SVector<f32, 7> {
+        self.predict();
+        self.update(mag_full)
     }
 }
