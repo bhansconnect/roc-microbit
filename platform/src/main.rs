@@ -163,11 +163,15 @@ async fn main(_spawner: Spawner, p: Peripherals) {
     );
 
     let mut input: RocInput = Default::default();
+    while !imu.mag_ready().await.unwrap() {}
+    let data = imu.mag_heading().await.unwrap();
+    let mut filter = lsm303agr::MagFilter::new(data);
     defmt::info!("Starting Main Loop");
     loop {
         if imu.mag_ready().await.unwrap() {
-            let data = imu.mag_data().await.unwrap();
-            defmt::info!("{}, {}", data.x, data.z,);
+            let data = imu.mag_heading().await.unwrap();
+            let states = filter.predict_and_update(&data);
+            defmt::info!("Raw: {:?}, Filtered: {:?}", data, states.as_slice());
         }
     }
     // loop {

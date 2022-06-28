@@ -1,3 +1,4 @@
+use defmt::Format;
 use embassy::time::Instant;
 use embassy_nrf::twim;
 
@@ -10,6 +11,7 @@ const CFG_REG_B_M: u8 = 0x61;
 const STATUS_REG_M: u8 = 0x67;
 const OUT_BASE_REG_M: u8 = 0x68;
 
+#[derive(Format)]
 pub struct MagData {
     pub x: i32,
     // TODO: Maybe re-add y, but it is not used for the current robot or calibrated.
@@ -94,9 +96,6 @@ impl<'d, T: twim::Instance> Lsm303agr<'d, T> {
 
 // Measurements:
 // x and z from magnometer
-// Measurement equations:
-// x = (magnitude * sin(angle) * x_scale) + x_bias
-// z = (magnitude * cos(angle) * z_scale) + z_bias
 
 // Need to find the jaobians for linearization.
 // They will make the real F and H matrix from the equations above.
@@ -119,13 +118,13 @@ pub struct MagFilter {
 }
 
 impl MagFilter {
-    pub fn new(mag_full: (MagData, f32), reading_time: Instant) -> MagFilter {
+    pub fn new(mag_full: (MagData, f32)) -> MagFilter {
         let (mag_data, heading) = mag_full;
         let x = mag_data.x as f32;
         let z = mag_data.z as f32;
         let magnitude = libm::sqrtf(x * x + z * z);
         MagFilter {
-            last_t: reading_time,
+            last_t: Instant::now(),
             x: na::SVector::from([heading, 0.0, magnitude, 0.0, 0.0, 1.0, 1.0]),
             // TODO: Actually setup/tune below values this.
             #[rustfmt::skip]
@@ -163,11 +162,13 @@ impl MagFilter {
         // angle, delta_angle = dt
         f[(0, 1)] = dt.as_micros() as f32 / 1_000_000.0;
 
+        // This function is linear so it is fine to directly apply.
+        // Normally, f would be the jacobian and we would have to directly update x.
         self.x = f * self.x;
         self.p = f * self.p * f.transpose() + self.q;
     }
 
-    fn update(&mut self, mag_full: (MagData, f32)) -> na::SVector<f32, 7> {
+    fn update(&mut self, mag_full: &(MagData, f32)) -> na::SVector<f32, 7> {
         let (mag_data, heading) = mag_full;
         let angle = self.x[0];
         // let dangle = self.x[1];
@@ -178,19 +179,24 @@ impl MagFilter {
         let z_scale = self.x[6];
         let sin_angle = libm::sinf(angle);
         let cos_angle = libm::cosf(angle);
+        // Measurement equations:
+        // x = (magnitude * sin(angle) * x_scale) + x_bias
+        // z = (magnitude * cos(angle) * z_scale) + z_bias
+        let hx = na::SVector::from([
+            (magnitude * sin_angle * x_scale) + x_bias,
+            (magnitude * cos_angle * z_scale) + z_bias,
+        ]);
         // Measurement jacobian.
         #[rustfmt::skip]
         let h = na::SMatrix::<f32, 2, 7>::from_row_slice(&[
             // dx/d_angle = magnitude * cos(angle) * x_scale
-            magnitude * cos_angle * x_scale, 0.0,
             // dz/d_angle = magnitude * -1 * sin(angle) * z_scale
-            0.0, magnitude * -1.0 * sin_angle * z_scale,
+            magnitude * cos_angle * x_scale, magnitude * -1.0 * sin_angle * z_scale,
             // dx/d2_angle = 0
             0.0, 0.0,
             // dx/d_magnitude = sin(angle) * x_scale
-            sin_angle * x_scale, 0.0,
             // dz/d_magnitude = cos(angle) * z_scale
-            0.0, cos_angle * z_scale,
+            sin_angle * x_scale, cos_angle * z_scale,
             // dx/d_x_bias = 1
             1.0, 0.0,
             // dz/d_z_bias = 1
@@ -207,11 +213,11 @@ impl MagFilter {
         let t = na::SMatrix::identity() - k * h;
         self.p = t * self.p * t.transpose() + k * self.r * k.transpose();
         let z = na::SVector::from([mag_data.x as f32, mag_data.z as f32]);
-        self.x = self.x + k * (z - h * self.x);
+        self.x = self.x + k * (z - hx);
         self.x
     }
 
-    pub fn predict_and_update(&mut self, mag_full: (MagData, f32)) -> na::SVector<f32, 7> {
+    pub fn predict_and_update(&mut self, mag_full: &(MagData, f32)) -> na::SVector<f32, 7> {
         self.predict();
         self.update(mag_full)
     }
