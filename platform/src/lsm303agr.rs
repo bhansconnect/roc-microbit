@@ -176,7 +176,7 @@ impl MagFilter {
             // dx/d_angle = magnitude * cos(angle) * x_scale
             // dz/d_angle = magnitude * -1 * sin(angle) * z_scale
             magnitude * cos_angle * x_scale, magnitude * -1.0 * sin_angle * z_scale,
-            // dx/d2_angle = 0
+            // dx/d2_angle = 0: Should this actually be the second deravitive of the above?
             0.0, 0.0,
             // dx/d_magnitude = sin(angle) * x_scale
             // dz/d_magnitude = cos(angle) * z_scale
